@@ -1,11 +1,18 @@
 # 使用するパッケージの宣言
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import animation
-from IPython.display import HTML
+
 
 
 # 方策パラメータthetaを行動方策piに変換する関数の定義
+def simple_convert_into_pi_from_theta(theta):
+    [m, n] = theta.shape
+    pi = np.zeros((m, n))
+    for i in range(m):
+        pi[i, :] = theta[i, :] / np.nansum(theta[i, :])
+    pi = np.nan_to_num(pi)
+    return pi
+
 def softmax_convert_into_pi_from_theta(theta):
     beta = 1.
     [m, n] = theta.shape
@@ -19,24 +26,51 @@ def softmax_convert_into_pi_from_theta(theta):
 
 
 # 行動aと1step移動後の状態sを求める関数を定義
-def get_action_and_next_s(pi, s):
+def get_action(s, Q, epsilon, pi_0):
     direction = ['up', 'right', 'down', 'left']
-    next_direction = np.random.choice(direction, p=pi[s, :])
+
+    # 行動を決める
+    if np.random.rand() < epsilon:
+        next_direction = np.random.choice(direction, p=pi_0[s, :])
+    else:
+        next_direction = direction[np.nanargmax(Q[s, :])]
 
     if next_direction == 'up':
         action = 0
-        s_next = s - 3
     elif next_direction == 'right':
         action = 1
-        s_next = s + 1
     elif next_direction == 'down':
         action = 2
-        s_next = s + 3
     elif next_direction == 'left':
         action = 3
+
+    return action
+
+
+def get_s_next(s, a, Q, epsilon, pi_0):
+    direction = ['up', 'right', 'down', 'left']
+    next_direction = direction[a]
+
+    if next_direction == 'up':
+        s_next = s - 3
+    elif next_direction == 'right':
+        s_next = s + 1
+    elif next_direction == 'down':
+        s_next = s + 3
+    elif next_direction == 'left':
         s_next = s - 1
 
-    return action, s_next
+    return s_next
+
+
+# Sarsaによる行動価値関数Qの更新
+def sarsa(s, a, r, s_next, a_next, Q, eta, gamma):
+    if s_next == 8:
+        Q[s,a] = Q[s,a] + eta*(r - Q[s,a])
+    else:
+        Q[s,a] = Q[s,a] + eta*(r + gamma*Q[s_next,a_next] - Q[s,a])
+
+    return Q
 
 
 # 迷路を解く関数の定義。状態と行動の履歴を出力
@@ -78,17 +112,7 @@ def update_theta(theta, pi, s_a_history):
     new_theta = theta + eta * delta_theta
     return new_theta
 
-# 描画機能
-def init():
-    line.set_data([],[])
-    return (line,)
 
-def animate(i):
-    state = s_a_history[i][0]
-    x = (state % 3) + 0.5
-    y = 2.5 - int(state /3)
-    line.set_data(x,y)
-    return (line,)
 
 
 # 初期位置での迷路の様子
@@ -138,33 +162,35 @@ theta_0 = np.array([
     [1, 1, np.nan, np.nan]  # S7
 ])
 
+# 初期の行動価値関数Qを設定
+[a, b] = theta_0.shape
+Q = np.random.rand(a, b) * theta_0
+
+
 # 初期の方策pi_0を求める
-pi_0 = softmax_convert_into_pi_from_theta(theta_0)
+pi_0 = simple_convert_into_pi_from_theta(theta_0)
 
-pi = pi_0
-theta = theta_0
-is_continue = True
-stop_epsilon = 10 ** -6
-while is_continue:
-    # 迷路内をゴール目指して移動
-    s_a_history = goal_maze_ret_s_a(pi)
+#
+# pi = pi_0
+# theta = theta_0
+# is_continue = True
+# stop_epsilon = 10 ** -6
+# while is_continue:
+#     # 迷路内をゴール目指して移動
+#     s_a_history = goal_maze_ret_s_a(pi)
+#
+#     # 方策の更新
+#     new_theta = update_theta(theta, pi, s_a_history)
+#     new_pi = softmax_convert_into_pi_from_theta(new_theta)
+#
+#     if np.sum(np.abs(new_pi - pi)) < stop_epsilon:
+#         is_continue = False
+#         print("かかったステップ数は{}", str(len(s_a_history) - 1))
+#         print(s_a_history)
+#         np.set_printoptions(precision=3, suppress=True)
+#         print(new_pi)
+#     else:
+#         theta = new_theta
+#         pi = new_pi
 
-    # 方策の更新
-    new_theta = update_theta(theta, pi, s_a_history)
-    new_pi = softmax_convert_into_pi_from_theta(new_theta)
 
-    if np.sum(np.abs(new_pi - pi)) < stop_epsilon:
-        is_continue = False
-        print("かかったステップ数は{}", str(len(s_a_history) - 1))
-        print(s_a_history)
-        np.set_printoptions(precision=3, suppress=True)
-        print(new_pi)
-    else:
-        theta = new_theta
-        pi = new_pi
-
-
-# 初期化関数とフレームごとの描画関数を用いて動画を作成する
-anim = animation.FuncAnimation(fig, animate, init_func=init, frames=len(s_a_history), interval=200, repeat=False)
-
-HTML(anim.to_jshtml())
